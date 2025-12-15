@@ -1,7 +1,7 @@
 import chainlit as cl
 import chainlit.data as cl_data
-# CORRECCIÓN: Importar Pagination y PersistedUser desde chainlit.types
-from chainlit.types import ThreadDict, ThreadFilter, Pagination, Feedback
+# CORRECCIÓN: Importamos PaginatedResponse desde types
+from chainlit.types import ThreadDict, ThreadFilter, Pagination, Feedback, PaginatedResponse
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from src.db.database import async_session
@@ -33,8 +33,14 @@ class CustomDataLayer(cl_data.BaseDataLayer):
     async def get_thread(self, thread_id: str):
         """Recupera una conversación completa para mostrarla."""
         async with async_session() as session:
+            try:
+                # Asegurar que el ID es un entero antes de consultar
+                t_id = int(thread_id)
+            except ValueError:
+                return None
+
             # 1. Buscar la conversación
-            result = await session.execute(select(Conversation).filter(Conversation.id == int(thread_id)))
+            result = await session.execute(select(Conversation).filter(Conversation.id == t_id))
             conversation = result.scalars().first()
             if not conversation:
                 return None
@@ -42,7 +48,7 @@ class CustomDataLayer(cl_data.BaseDataLayer):
             # 2. Buscar sus mensajes
             msgs_result = await session.execute(
                 select(Message)
-                .filter(Message.conversation_id == int(thread_id))
+                .filter(Message.conversation_id == t_id)
                 .order_by(Message.created_at.asc())
             )
             db_messages = msgs_result.scalars().all()
@@ -69,7 +75,7 @@ class CustomDataLayer(cl_data.BaseDataLayer):
     async def list_threads(self, pagination: Pagination, filter: ThreadFilter):
         """Lista las conversaciones en la barra lateral."""
         if not filter.userId:
-            return cl_data.PaginatedResponse(data=[], hasMore=False)
+            return PaginatedResponse(data=[], hasMore=False)
 
         async with async_session() as session:
             # Consulta básica paginada
@@ -94,13 +100,19 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                     "metadata": {}
                 })
 
-            return cl_data.PaginatedResponse(data=threads, hasMore=False)
+            # CORRECCIÓN: Usar PaginatedResponse importado de types
+            return PaginatedResponse(data=threads, hasMore=False)
 
     async def update_thread(self, thread_id: str, name: str = None, user_id: str = None, metadata: dict = None, tags: list = None):
         """Actualiza el nombre del hilo."""
         if name:
+             try:
+                 t_id = int(thread_id)
+             except ValueError:
+                 return
+
              async with async_session() as session:
-                result = await session.execute(select(Conversation).filter(Conversation.id == int(thread_id)))
+                result = await session.execute(select(Conversation).filter(Conversation.id == t_id))
                 conversation = result.scalars().first()
                 if conversation:
                     conversation.title = name
@@ -108,13 +120,23 @@ class CustomDataLayer(cl_data.BaseDataLayer):
 
     async def delete_thread(self, thread_id: str):
         """Borra una conversación."""
+        try:
+             t_id = int(thread_id)
+        except ValueError:
+             return
+
         async with async_session() as session:
-            await session.execute(delete(Conversation).filter(Conversation.id == int(thread_id)))
+            await session.execute(delete(Conversation).filter(Conversation.id == t_id))
             await session.commit()
     
     async def get_thread_author(self, thread_id: str):
+         try:
+             t_id = int(thread_id)
+         except ValueError:
+             return ""
+
          async with async_session() as session:
-            result = await session.execute(select(Conversation).filter(Conversation.id == int(thread_id)))
+            result = await session.execute(select(Conversation).filter(Conversation.id == t_id))
             conversation = result.scalars().first()
             if conversation:
                  return str(conversation.user_id)

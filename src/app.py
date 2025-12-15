@@ -22,16 +22,24 @@ async def auth(username: str, password: str):
 async def start():
     user = cl.user_session.get("user")
     
-    # 1. Comprobar si estamos reanudando un chat (thread_id viene en la URL/contexto)
-    thread_id = None
-    if cl.context.session.thread_id:
-        thread_id = cl.context.session.thread_id
+    # 1. Comprobar si estamos reanudando un chat válido
+    thread_id = cl.context.session.thread_id
+    is_resume = False
+    
+    # Validación: Si thread_id es un UUID (letras y guiones), no es de nuestra DB.
+    # Nuestra DB usa enteros.
+    if thread_id:
+        try:
+            int(thread_id)
+            is_resume = True
+        except ValueError:
+            thread_id = None # Es un UUID temporal, lo ignoramos
 
     # Recuperamos modelos de Ollama dinámicamente
     ollama_models = await get_ollama_models()
     
-    # 2. Si es un chat nuevo (no hay thread_id previo en la UI de Chainlit), creamos uno
-    if not thread_id:
+    # 2. Si es un chat nuevo o el ID no era válido
+    if not is_resume:
         async with async_session() as session:
             # Título temporal, luego podríamos generarlo con IA
             conv = await create_conversation(session, user_id=user.metadata["id"], title="Nueva Conversación")
@@ -41,7 +49,7 @@ async def start():
             # Inicializar historial vacío
             cl.user_session.set("message_history", [])
     else:
-        # 3. Si estamos REANUDANDO
+        # 3. Si estamos REANUDANDO (thread_id es un entero válido)
         cl.user_session.set("conversation_id", int(thread_id))
         
         # Cargar historial de la DB para el contexto del LLM
@@ -61,8 +69,6 @@ async def start():
                 values=["ollama", "openai", "openrouter"],
                 initial_index=0
             ),
-            # El campo de modelo ahora es un Select si es Ollama, o texto si es otro
-            # Para simplificar, usamos un Select con los de Ollama + opción 'custom'
             cl.input_widget.Select(
                 id="ModelName",
                 label="Modelo (Ollama Detectado)",
@@ -77,7 +83,6 @@ async def main(message: cl.Message):
     conversation_id = cl.user_session.get("conversation_id")
     history = cl.user_session.get("message_history")
     
-    # ... (Recuperar settings igual que antes) ...
     chat_settings = cl.user_session.get("chat_settings")
     provider = chat_settings.get("ModelProvider", "ollama") if chat_settings else "ollama"
     model_name = chat_settings.get("ModelName", "llama3")
