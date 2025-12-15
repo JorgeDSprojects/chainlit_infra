@@ -9,3 +9,4 @@ aiosqlite
 passlib[bcrypt]
 python-multipart
 bcrypt==4.0.1
+httpx

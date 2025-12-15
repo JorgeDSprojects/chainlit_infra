@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from chainlit.utils import mount_chainlit
+from src.db.chainlit_data_layer import CustomDataLayer # Importar
+import chainlit.data as cl_data
 from src.config import settings
 from src.db.database import engine, Base
 from src.routers import users
@@ -21,7 +23,7 @@ app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
 # Registrar rutas
 app.include_router(users.router, prefix="/api", tags=["Users"])
-
+cl_data._data_layer = CustomDataLayer()
 # Montar Chainlit
 mount_chainlit(app=app, target="src/app.py", path="/chat")
 
