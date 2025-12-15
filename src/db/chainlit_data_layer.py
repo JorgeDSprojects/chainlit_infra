@@ -1,7 +1,6 @@
 import chainlit as cl
 import chainlit.data as cl_data
-# CORRECCIÓN: Importamos PaginatedResponse desde types
-from chainlit.types import ThreadDict, ThreadFilter, Pagination, Feedback, PaginatedResponse
+from chainlit.types import ThreadDict, ThreadFilter, Pagination, Feedback, PaginatedResponse, PageInfo
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from src.db.database import async_session
@@ -10,42 +9,39 @@ from src.db.crud import create_conversation, add_message
 
 class CustomDataLayer(cl_data.BaseDataLayer):
     async def get_user(self, identifier: str):
-        # Ya manejamos esto en el auth callback, pero es parte de la interfaz
+        """
+        Recupera el usuario de la DB cuando se recarga la sesión.
+        CRÍTICO: Debe devolver metadata con el ID para que app.py no falle.
+        """
         async with async_session() as session:
             result = await session.execute(select(User).filter(User.email == identifier))
             user_db = result.scalars().first()
             
-            # CORRECCIÓN CRÍTICA: Convertir modelo SQLAlchemy a PersistedUser de Chainlit
             if user_db:
                 return cl.PersistedUser(
                     id=str(user_db.id),
                     identifier=user_db.email,
-                    createdAt=user_db.created_at.isoformat() if user_db.created_at else None
+                    createdAt=user_db.created_at.isoformat() if user_db.created_at else None,
+                    metadata={"id": user_db.id} # ¡ESTO ES LO QUE FALTABA PARA EL ERROR KEYERROR 'ID'!
                 )
             return None
 
     async def create_user(self, user: cl.User): 
-        # No usamos este método porque tenemos registro propio, pero debe existir
         pass
 
-    # --- GESTIÓN DE THREADS (Conversaciones) ---
-
     async def get_thread(self, thread_id: str):
-        """Recupera una conversación completa para mostrarla."""
+        """Recupera una conversación completa."""
         async with async_session() as session:
             try:
-                # Asegurar que el ID es un entero antes de consultar
                 t_id = int(thread_id)
             except ValueError:
                 return None
 
-            # 1. Buscar la conversación
             result = await session.execute(select(Conversation).filter(Conversation.id == t_id))
             conversation = result.scalars().first()
             if not conversation:
                 return None
 
-            # 2. Buscar sus mensajes
             msgs_result = await session.execute(
                 select(Message)
                 .filter(Message.conversation_id == t_id)
@@ -53,7 +49,6 @@ class CustomDataLayer(cl_data.BaseDataLayer):
             )
             db_messages = msgs_result.scalars().all()
 
-            # 3. Formatear para Chainlit
             steps = []
             for msg in db_messages:
                 steps.append({
@@ -74,11 +69,19 @@ class CustomDataLayer(cl_data.BaseDataLayer):
 
     async def list_threads(self, pagination: Pagination, filter: ThreadFilter):
         """Lista las conversaciones en la barra lateral."""
+        
+        # Objeto PageInfo completo para evitar ValidationError
+        empty_page_info = PageInfo(
+            hasNextPage=False, 
+            hasPreviousPage=False, 
+            startCursor=None, 
+            endCursor=None
+        )
+
         if not filter.userId:
-            return PaginatedResponse(data=[], hasMore=False)
+            return PaginatedResponse(data=[], pageInfo=empty_page_info)
 
         async with async_session() as session:
-            # Consulta básica paginada
             stmt = (
                 select(Conversation)
                 .filter(Conversation.user_id == int(filter.userId))
@@ -96,15 +99,16 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                     "createdAt": conv.created_at.isoformat() if conv.created_at else None,
                     "name": conv.title,
                     "userId": str(conv.user_id),
-                    "steps": [], # No necesitamos cargar mensajes para la lista
+                    "steps": [],
                     "metadata": {}
                 })
 
-            # CORRECCIÓN: Usar PaginatedResponse importado de types
-            return PaginatedResponse(data=threads, hasMore=False)
+            return PaginatedResponse(
+                data=threads, 
+                pageInfo=empty_page_info # ¡SOLUCIÓN AL VALIDATION ERROR!
+            )
 
     async def update_thread(self, thread_id: str, name: str = None, user_id: str = None, metadata: dict = None, tags: list = None):
-        """Actualiza el nombre del hilo."""
         if name:
              try:
                  t_id = int(thread_id)
@@ -119,7 +123,6 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                     await session.commit()
 
     async def delete_thread(self, thread_id: str):
-        """Borra una conversación."""
         try:
              t_id = int(thread_id)
         except ValueError:
@@ -142,34 +145,14 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                  return str(conversation.user_id)
             return ""
 
-    # --- MÉTODOS OBLIGATORIOS ---
-
-    async def create_step(self, step_dict: dict):
-        pass 
-
-    async def update_step(self, step_dict: dict):
-        pass
-
-    async def delete_step(self, step_id: str):
-        pass
-
-    async def get_element(self, thread_id: str, element_id: str):
-        pass
-
-    async def create_element(self, element_dict: dict):
-        pass
-    
-    async def delete_element(self, element_id: str):
-        pass
-
-    async def upsert_feedback(self, feedback: Feedback):
-        pass
-
-    async def delete_feedback(self, feedback_id: str):
-        pass
-
-    async def build_debug_url(self):
-        pass
-
-    async def close(self):
-        pass
+    # --- MÉTODOS OBLIGATORIOS (STUBS) ---
+    async def create_step(self, step_dict: dict): pass 
+    async def update_step(self, step_dict: dict): pass
+    async def delete_step(self, step_id: str): pass
+    async def get_element(self, thread_id: str, element_id: str): pass
+    async def create_element(self, element_dict: dict): pass
+    async def delete_element(self, element_id: str): pass
+    async def upsert_feedback(self, feedback: Feedback): pass
+    async def delete_feedback(self, feedback_id: str): pass
+    async def build_debug_url(self): pass
+    async def close(self): pass
