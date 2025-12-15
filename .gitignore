@@ -3,7 +3,7 @@
 venv/
 ENV/
 env/
-
+chat.db
 # Environment variables
 .env
 
