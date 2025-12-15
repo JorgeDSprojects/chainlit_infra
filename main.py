@@ -3,8 +3,10 @@ from contextlib import asynccontextmanager
 from chainlit.utils import mount_chainlit
 from src.config import settings
 from src.db.database import engine, Base
+from src.routers import users 
 # IMPORTANTE: Importar los modelos para que se registren en Base.metadata antes de crear las tablas
 import src.db.models 
+
 
 # --- LIFESPAN (Ciclo de vida) ---
 # Esto se ejecuta antes de que la app empiece a recibir peticiones
@@ -19,7 +21,7 @@ async def lifespan(app: FastAPI):
 
 # Iniciamos FastAPI con el lifespan
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
-
+app.include_router(users.router, prefix="/api", tags=["Users"]) 
 # Endpoint de prueba
 @app.get("/api/status")
 def read_root():

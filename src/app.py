@@ -22,9 +22,8 @@ async def start():
     ).send()
     
     # Mensaje de bienvenida
-    await cl.Message(
-        content="¡Sistema listo! Configura el proveedor en el menú de ajustes ⚙️."
-    ).send()
+    user = cl.user_session.get("user")
+    await cl.Message(f"Hola {user.identifier}, ¡bienvenido de nuevo!").send()
 
 @cl.on_message
 async def main(message: cl.Message):

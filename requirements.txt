@@ -4,7 +4,9 @@ uvicorn
 chainlit
 python-dotenv
 pydantic-settings
-openai  # Cliente estándar compatible con Ollama y OpenRouter
+openai
 sqlalchemy
 aiosqlite
 passlib[bcrypt]
+python-multipart
+
