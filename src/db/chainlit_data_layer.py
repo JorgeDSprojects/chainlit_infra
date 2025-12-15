@@ -1,7 +1,7 @@
 import chainlit as cl
 import chainlit.data as cl_data
 # CORRECCIÓN: Importar Pagination desde chainlit.types
-from chainlit.types import ThreadDict, ThreadFilter, Pagination
+from chainlit.types import ThreadDict, ThreadFilter, Pagination, Feedback
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from src.db.database import async_session
@@ -70,7 +70,6 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                 .order_by(Conversation.created_at.desc())
                 .limit(pagination.first)
             )
-            # En un caso real implementaríamos la paginación con cursor aquí
             
             result = await session.execute(stmt)
             conversations = result.scalars().all()
@@ -88,11 +87,58 @@ class CustomDataLayer(cl_data.BaseDataLayer):
 
             return cl_data.PaginatedResponse(data=threads, hasMore=False)
 
+    async def update_thread(self, thread_id: str, name: str = None, user_id: str = None, metadata: dict = None, tags: list = None):
+        """Actualiza el nombre del hilo."""
+        if name:
+             async with async_session() as session:
+                result = await session.execute(select(Conversation).filter(Conversation.id == int(thread_id)))
+                conversation = result.scalars().first()
+                if conversation:
+                    conversation.title = name
+                    await session.commit()
+
     async def delete_thread(self, thread_id: str):
         """Borra una conversación."""
         async with async_session() as session:
             await session.execute(delete(Conversation).filter(Conversation.id == int(thread_id)))
             await session.commit()
+    
+    async def get_thread_author(self, thread_id: str):
+         async with async_session() as session:
+            result = await session.execute(select(Conversation).filter(Conversation.id == int(thread_id)))
+            conversation = result.scalars().first()
+            if conversation:
+                 return str(conversation.user_id)
+            return ""
+
+    # --- MÉTODOS OBLIGATORIOS (Aunque no los usemos todos aún) ---
 
     async def create_step(self, step_dict: dict):
+        pass 
+
+    async def update_step(self, step_dict: dict):
+        pass
+
+    async def delete_step(self, step_id: str):
+        pass
+
+    async def get_element(self, thread_id: str, element_id: str):
+        pass
+
+    async def create_element(self, element_dict: dict):
+        pass
+    
+    async def delete_element(self, element_id: str):
+        pass
+
+    async def upsert_feedback(self, feedback: Feedback):
+        pass
+
+    async def delete_feedback(self, feedback_id: str):
+        pass
+
+    async def build_debug_url(self):
+        pass
+
+    async def close(self):
         pass

@@ -1,4 +1,13 @@
-# --- AUTH CALLBACK (Igual) ---
+import chainlit as cl
+from sqlalchemy.future import select
+from src.db.database import async_session
+from src.db.models import User
+from src.db.crud import create_conversation, add_message, get_conversation_history
+from src.auth.utils import verify_password
+from src.services.llm_service import llm_service
+from src.services.ollama_service import get_ollama_models
+
+# --- CALLBACK DE AUTENTICACIÓN ---
 @cl.password_auth_callback
 async def auth(username: str, password: str):
     async with async_session() as session:
@@ -14,8 +23,9 @@ async def start():
     user = cl.user_session.get("user")
     
     # 1. Comprobar si estamos reanudando un chat (thread_id viene en la URL/contexto)
-    chat_profile = cl.user_session.get("chat_profile") # Chainlit feature futura
-    thread_id = cl.context.session.thread_id # ID si se seleccionó del historial
+    thread_id = None
+    if cl.context.session.thread_id:
+        thread_id = cl.context.session.thread_id
 
     # Recuperamos modelos de Ollama dinámicamente
     ollama_models = await get_ollama_models()
@@ -92,14 +102,6 @@ async def main(message: cl.Message):
     async with async_session() as session:
         await add_message(session, conversation_id, "assistant", full_response)
         
-    # TRUCO PRO: Actualizar el título del chat si es el primer mensaje
+    # Actualizar el título del chat si es el primer mensaje
     if len(history) <= 2:
         await cl.rename_thread(thread_id=str(conversation_id), name=message.content[:30] + "...")
-
-
-
-@cl.on_settings_update
-async def setup_agent(settings):
-    cl.user_session.set("chat_settings", settings)
-    await cl.Message(content=f"✅ Proveedor cambiado a: {settings['ModelProvider']}").send()
-
