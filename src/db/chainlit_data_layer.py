@@ -1,6 +1,7 @@
-import chainlit as cl  # <--- IMPORTANTE: Importamos la librería principal
+import chainlit as cl
 import chainlit.data as cl_data
-from chainlit.types import ThreadDict, ThreadFilter
+# CORRECCIÓN: Importar Pagination desde chainlit.types
+from chainlit.types import ThreadDict, ThreadFilter, Pagination
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from src.db.database import async_session
@@ -14,7 +15,7 @@ class CustomDataLayer(cl_data.BaseDataLayer):
             result = await session.execute(select(User).filter(User.email == identifier))
             return result.scalars().first()
 
-    async def create_user(self, user: cl.User): # <--- CORREGIDO: Usamos cl.User
+    async def create_user(self, user: cl.User): 
         # No usamos este método porque tenemos registro propio, pero debe existir
         pass
 
@@ -56,7 +57,7 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                 "metadata": {} 
             }
 
-    async def list_threads(self, pagination: cl_data.Pagination, filter: ThreadFilter):
+    async def list_threads(self, pagination: Pagination, filter: ThreadFilter):
         """Lista las conversaciones en la barra lateral."""
         if not filter.userId:
             return cl_data.PaginatedResponse(data=[], hasMore=False)
