@@ -1,3 +1,4 @@
+import chainlit as cl  # <--- IMPORTANTE: Importamos la librería principal
 import chainlit.data as cl_data
 from chainlit.types import ThreadDict, ThreadFilter
 from sqlalchemy.future import select
@@ -13,7 +14,7 @@ class CustomDataLayer(cl_data.BaseDataLayer):
             result = await session.execute(select(User).filter(User.email == identifier))
             return result.scalars().first()
 
-    async def create_user(self, user: cl_data.User):
+    async def create_user(self, user: cl.User): # <--- CORREGIDO: Usamos cl.User
         # No usamos este método porque tenemos registro propio, pero debe existir
         pass
 
@@ -52,7 +53,7 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                 "name": conversation.title,
                 "userId": str(conversation.user_id),
                 "steps": steps,
-                "metadata": {} # Aquí podríamos guardar la config del modelo usada
+                "metadata": {} 
             }
 
     async def list_threads(self, pagination: cl_data.Pagination, filter: ThreadFilter):
@@ -68,10 +69,8 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                 .order_by(Conversation.created_at.desc())
                 .limit(pagination.first)
             )
-            if pagination.cursor:
-                # Lógica simple de cursor (mejorable)
-                pass 
-
+            # En un caso real implementaríamos la paginación con cursor aquí
+            
             result = await session.execute(stmt)
             conversations = result.scalars().all()
 
@@ -94,9 +93,5 @@ class CustomDataLayer(cl_data.BaseDataLayer):
             await session.execute(delete(Conversation).filter(Conversation.id == int(thread_id)))
             await session.commit()
 
-    # --- GESTIÓN DE PASOS (Mensajes) ---
-    # Chainlit llama a esto automáticamente si usas DataLayer
     async def create_step(self, step_dict: dict):
-        # Nosotros guardamos manualmente en app.py por ahora para mayor control,
-        # pero podríamos mover la lógica aquí en el futuro.
-        pass 
+        pass
