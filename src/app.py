@@ -1,9 +1,33 @@
 import chainlit as cl
+from sqlalchemy.future import select
+from src.db.database import async_session
+from src.db.models import User
+from src.auth.utils import verify_password
 from src.services.llm_service import llm_service
+
+# --- CALLBACK DE AUTENTICACIÓN ---
+@cl.password_auth_callback
+async def auth(username: str, password: str):
+    async with async_session() as session:
+        result = await session.execute(select(User).filter(User.email == username))
+        user_db = result.scalars().first()
+        
+        if user_db and verify_password(password, user_db.hashed_password):
+            return cl.User(identifier=username, metadata={"id": user_db.id})
+        return None
 
 @cl.on_chat_start
 async def start():
-    # 1. Definir la configuración del chat (Settings)
+    # SOLUCIÓN ERROR: Verificar si el usuario existe antes de usarlo
+    user = cl.user_session.get("user")
+    
+    if user:
+        await cl.Message(f"Hola {user.identifier}, ¡bienvenido de nuevo!").send()
+    else:
+        # Si se recargó el servidor, la sesión puede perderse momentáneamente en desarrollo
+        await cl.Message("Sesión reiniciada. Si tienes problemas, recarga la página.").send()
+
+    # Configuración del chat (Widgets)
     settings = await cl.ChatSettings(
         [
             cl.input_widget.Select(
@@ -20,6 +44,7 @@ async def start():
             )
         ]
     ).send()
+
     
     # Mensaje de bienvenida
     user = cl.user_session.get("user")
@@ -27,10 +52,8 @@ async def start():
 
 @cl.on_message
 async def main(message: cl.Message):
-    # 1. Recuperar la configuración actual del usuario
+    # ... código de Fase 2 ...
     chat_settings = cl.user_session.get("chat_settings")
-    
-    # Valores por defecto si no ha tocado la configuración
     provider = "ollama"
     model_name = "llama3"
     
@@ -38,12 +61,9 @@ async def main(message: cl.Message):
         provider = chat_settings.get("ModelProvider", "ollama")
         model_name = chat_settings.get("ModelName", None)
 
-    # 2. Preparar el mensaje de respuesta vacío para hacer streaming
     msg = cl.Message(content="")
     await msg.send()
 
-    # 3. Llamar al servicio y hacer streaming del contenido
-    # Usamos 'async for' porque nuestro servicio es un generador asíncrono
     async for token in llm_service.stream_response(
         message=message.content, 
         provider=provider, 
@@ -51,12 +71,10 @@ async def main(message: cl.Message):
     ):
         await msg.stream_token(token)
     
-    # 4. Finalizar el mensaje
     await msg.update()
 
 @cl.on_settings_update
 async def setup_agent(settings):
-    # Guardar configuración en la sesión del usuario cuando la cambie
     cl.user_session.set("chat_settings", settings)
     await cl.Message(content=f"✅ Proveedor cambiado a: {settings['ModelProvider']}").send()
 

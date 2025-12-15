@@ -1,4 +1,3 @@
-# Dependencias principales (versiones recientes)
 fastapi
 uvicorn
 chainlit
