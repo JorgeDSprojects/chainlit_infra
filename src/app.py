@@ -2,76 +2,77 @@ import chainlit as cl
 from sqlalchemy.future import select
 from src.db.database import async_session
 from src.db.models import User
+from src.db.crud import create_conversation, add_message
 from src.auth.utils import verify_password
 from src.services.llm_service import llm_service
 
-# --- CALLBACK DE AUTENTICACIÓN ---
+# --- AUTENTICACIÓN (Igual que Fase 4) ---
 @cl.password_auth_callback
 async def auth(username: str, password: str):
     async with async_session() as session:
         result = await session.execute(select(User).filter(User.email == username))
         user_db = result.scalars().first()
-        
         if user_db and verify_password(password, user_db.hashed_password):
             return cl.User(identifier=username, metadata={"id": user_db.id})
         return None
 
 @cl.on_chat_start
 async def start():
-    # SOLUCIÓN ERROR: Verificar si el usuario existe antes de usarlo
     user = cl.user_session.get("user")
     
+    # 1. Crear una nueva conversación en la Base de Datos
+    async with async_session() as session:
+        conversation = await create_conversation(session, user_id=user.metadata["id"])
+        # Guardamos el ID de la conversación en la sesión para usarlo luego
+        cl.user_session.set("conversation_id", conversation.id)
+
+    # 2. Inicializar el historial en memoria (para el contexto inmediato)
+    cl.user_session.set("message_history", [])
+
     if user:
-        await cl.Message(f"Hola {user.identifier}, ¡bienvenido de nuevo!").send()
-    else:
-        # Si se recargó el servidor, la sesión puede perderse momentáneamente en desarrollo
-        await cl.Message("Sesión reiniciada. Si tienes problemas, recarga la página.").send()
+        await cl.Message(f"Hola {user.identifier}. Conversación #{conversation.id} iniciada.").send()
 
-    # Configuración del chat (Widgets)
-    settings = await cl.ChatSettings(
-        [
-            cl.input_widget.Select(
-                id="ModelProvider",
-                label="Proveedor de IA",
-                values=["ollama", "openai", "openrouter"],
-                initial_index=0
-            ),
-            cl.input_widget.TextInput(
-                id="ModelName",
-                label="Nombre del Modelo (Opcional)",
-                initial="llama3",
-                description="Ej: gpt-4, llama3, mistralai/mistral-7b-instruct"
-            )
-        ]
-    ).send()
-
-    
-    # Mensaje de bienvenida
-    user = cl.user_session.get("user")
-    await cl.Message(f"Hola {user.identifier}, ¡bienvenido de nuevo!").send()
+    # Settings del Chat
+    await cl.ChatSettings([
+        cl.input_widget.Select(id="ModelProvider", label="Proveedor", values=["ollama", "openai", "openrouter"], initial_index=0),
+        cl.input_widget.TextInput(id="ModelName", label="Modelo", initial="llama3")
+    ]).send()
 
 @cl.on_message
 async def main(message: cl.Message):
-    # ... código de Fase 2 ...
+    # Recuperar datos de la sesión
+    conversation_id = cl.user_session.get("conversation_id")
+    history = cl.user_session.get("message_history")
     chat_settings = cl.user_session.get("chat_settings")
-    provider = "ollama"
-    model_name = "llama3"
     
-    if chat_settings:
-        provider = chat_settings.get("ModelProvider", "ollama")
-        model_name = chat_settings.get("ModelName", None)
+    provider = chat_settings.get("ModelProvider", "ollama") if chat_settings else "ollama"
+    model_name = chat_settings.get("ModelName", None)
 
+    # 1. Añadir mensaje del USUARIO al historial y a la DB
+    history.append({"role": "user", "content": message.content})
+    
+    async with async_session() as session:
+        await add_message(session, conversation_id, "user", message.content)
+
+    # 2. Preparar respuesta del Asistente
     msg = cl.Message(content="")
     await msg.send()
-
-    async for token in llm_service.stream_response(
-        message=message.content, 
-        provider=provider, 
-        specific_model=model_name
-    ):
-        await msg.stream_token(token)
     
+    full_response = ""
+
+    # 3. Llamar al LLM pasando TODO el historial
+    async for token in llm_service.stream_response(history, provider, model_name):
+        await msg.stream_token(token)
+        full_response += token
+    
+    # 4. Actualizar UI y guardar respuesta del ASISTENTE en DB
     await msg.update()
+    
+    history.append({"role": "assistant", "content": full_response})
+    
+    async with async_session() as session:
+        await add_message(session, conversation_id, "assistant", full_response)
+
 
 @cl.on_settings_update
 async def setup_agent(settings):
