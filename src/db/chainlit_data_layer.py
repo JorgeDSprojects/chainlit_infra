@@ -1,6 +1,6 @@
 import chainlit as cl
 import chainlit.data as cl_data
-# CORRECCIÓN: Importar Pagination desde chainlit.types
+# CORRECCIÓN: Importar Pagination y PersistedUser desde chainlit.types
 from chainlit.types import ThreadDict, ThreadFilter, Pagination, Feedback
 from sqlalchemy.future import select
 from sqlalchemy import delete
@@ -13,7 +13,16 @@ class CustomDataLayer(cl_data.BaseDataLayer):
         # Ya manejamos esto en el auth callback, pero es parte de la interfaz
         async with async_session() as session:
             result = await session.execute(select(User).filter(User.email == identifier))
-            return result.scalars().first()
+            user_db = result.scalars().first()
+            
+            # CORRECCIÓN CRÍTICA: Convertir modelo SQLAlchemy a PersistedUser de Chainlit
+            if user_db:
+                return cl.PersistedUser(
+                    id=str(user_db.id),
+                    identifier=user_db.email,
+                    createdAt=user_db.created_at.isoformat() if user_db.created_at else None
+                )
+            return None
 
     async def create_user(self, user: cl.User): 
         # No usamos este método porque tenemos registro propio, pero debe existir
@@ -111,7 +120,7 @@ class CustomDataLayer(cl_data.BaseDataLayer):
                  return str(conversation.user_id)
             return ""
 
-    # --- MÉTODOS OBLIGATORIOS (Aunque no los usemos todos aún) ---
+    # --- MÉTODOS OBLIGATORIOS ---
 
     async def create_step(self, step_dict: dict):
         pass 
